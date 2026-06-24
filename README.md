@@ -170,9 +170,3 @@ the narrative you'll actually talk through in interviews.
   *why* certain sectors moved, not just *that* they moved
 
 ---
-
-## Disclaimer
-This project is for educational and portfolio purposes only. Nothing here
-constitutes investment advice. Historical performance shown is not
-indicative of future results.
-# Dashboard-
