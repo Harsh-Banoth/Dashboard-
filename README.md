@@ -1,10 +1,9 @@
 # Indian Equity Sector Performance Analysis
 
 A SQL + Python (Streamlit) analysis of how different sectors of the Indian stock
-market (NSE) have performed over time — built as a portfolio project for
-Finance Analyst / Business Analyst roles.
+market (NSE) have performed over time.
 
-Rather than just plotting stock prices, this project asks specific
+Rather than just plotting stock prices, It asks specific
 business questions of the data: which sectors led, which lagged, how did
 each sector behave during market corrections, and how correlated are
 sectors with the broader market. The analytical work happens in SQL; the
@@ -76,8 +75,7 @@ needs:
 | Storage / analysis | SQL (PostgreSQL syntax; minor edits work for SQL Server/MySQL/SQLite) |
 | Visualization      | Streamlit + Plotly (interactive Python dashboard) |
 
-No paid API keys are required — `jugaad-data` reads NSE's own public
-historical data archives.
+
 
 ---
 
