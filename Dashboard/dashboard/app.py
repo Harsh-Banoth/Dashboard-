@@ -70,9 +70,15 @@ def load_sector_summary() -> pd.DataFrame:
 
 
 try:
-    sector_index_df = load_sector_index_prices()
     stock_df = load_daily_prices()
     sector_summary_df = load_sector_summary()
+    sector_index_df = load_sector_index_prices()
+
+    if sector_index_df.empty:
+        st.warning(
+            "Sector index data was not downloaded. Using stock data only."
+        )
+
 except Exception as e:
     st.error(
         "Could not connect to the database. Make sure Postgres is running, "
@@ -91,9 +97,16 @@ page = st.sidebar.radio(
     ["Market Overview", "Sector Deep Dive", "Sector Rotation & Correlation"],
 )
 
-min_date = sector_index_df["trade_date"].min()
-max_date = sector_index_df["trade_date"].max()
-# st.date_input requires plain datetime.date objects, not pandas Timestamps
+if sector_index_df.empty:
+    min_date = stock_df["trade_date"].min()
+    max_date = stock_df["trade_date"].max()
+else:
+    min_date = sector_index_df["trade_date"].min()
+    max_date = sector_index_df["trade_date"].max()
+if pd.isna(min_date) or pd.isna(max_date):
+    st.error("No data found.")
+    st.stop()
+
 date_range = st.sidebar.date_input(
     "Date range",
     value=(min_date.date(), max_date.date()),
@@ -106,10 +119,13 @@ if isinstance(date_range, tuple) and len(date_range) == 2:
 else:
     start_date, end_date = min_date, max_date
 
-sector_index_filtered = sector_index_df[
-    (sector_index_df["trade_date"] >= start_date)
-    & (sector_index_df["trade_date"] <= end_date)
-]
+if sector_index_df.empty:
+    sector_index_filtered = pd.DataFrame()
+else:
+    sector_index_filtered = sector_index_df[
+        (sector_index_df["trade_date"] >= start_date)
+        & (sector_index_df["trade_date"] <= end_date)
+    ]
 stock_filtered = stock_df[
     (stock_df["trade_date"] >= start_date) & (stock_df["trade_date"] <= end_date)
 ]
@@ -124,70 +140,78 @@ if page == "Market Overview":
         "Nifty 50 trend and sector-level performance for the selected date range."
     )
 
-    nifty = sector_index_filtered[sector_index_filtered["index_name"] == "NIFTY 50"]
+    if sector_index_filtered.empty:
+    
 
-    col1, col2, col3 = st.columns(3)
-    if not nifty.empty:
-        period_return = (nifty["close"].iloc[-1] / nifty["close"].iloc[0] - 1) * 100
-        col1.metric("Nifty 50 period return", f"{period_return:.2f}%")
-    if not sector_summary_df.empty:
-        best_row = sector_summary_df.iloc[0]
-        worst_row = sector_summary_df.iloc[-1]
+        st.subheader("Stock Summary")
+
+        col1, col2 = st.columns(2)
+
+        col1.metric(
+            "Stocks Loaded",
+            stock_df["symbol"].nunique()
+        )
+
         col2.metric(
-            "Best sector (annualized)",
-            best_row["sector"],
-            f"{best_row['annualized_return_pct']:.1f}%",
-        )
-        col3.metric(
-            "Worst sector (annualized)",
-            worst_row["sector"],
-            f"{worst_row['annualized_return_pct']:.1f}%",
+            "Total Records",
+            len(stock_df)
         )
 
-    st.subheader("Nifty 50 Closing Price")
-    if not nifty.empty:
-        fig = px.line(nifty, x="trade_date", y="close")
-        fig.update_layout(yaxis_title="Close (₹)", xaxis_title="")
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("No NIFTY 50 data found for this date range.")
+        st.subheader("Annualized Sector Returns")
 
-    st.subheader("Sector Returns Heatmap (Month x Sector)")
-    sectors_only = sector_index_filtered[
-        sector_index_filtered["index_name"] != "NIFTY 50"
-    ].copy()
-    if not sectors_only.empty:
-        sectors_only["month"] = sectors_only["trade_date"].dt.to_period("M").astype(str)
-        monthly = (
-            sectors_only.groupby(["index_name", "month"])["daily_return_pct"]
-            .sum()
-            .reset_index()
-        )
-        pivot = monthly.pivot(index="index_name", columns="month", values="daily_return_pct")
-        fig = px.imshow(
-            pivot,
-            color_continuous_scale="RdYlGn",
-            color_continuous_midpoint=0,
-            aspect="auto",
-            labels=dict(color="Monthly Return %"),
-        )
-        st.plotly_chart(fig, use_container_width=True)
-    else:
-        st.info("No sector index data found for this date range.")
-
-    st.subheader("Sector Risk vs. Return")
-    if not sector_summary_df.empty:
-        fig = px.scatter(
+        fig = px.bar(
             sector_summary_df,
-            x="annualized_volatility_pct",
+            x="sector",
             y="annualized_return_pct",
-            text="sector",
-            labels={
-                "annualized_volatility_pct": "Annualized Volatility %",
-                "annualized_return_pct": "Annualized Return %",
-            },
+            color="annualized_return_pct",
         )
-        fig.update_traces(textposition="top center", marker=dict(size=12))
+
+        st.plotly_chart(fig, use_container_width=True)
+
+    else:
+
+        nifty = sector_index_filtered[
+            sector_index_filtered["index_name"] == "NIFTY 50"
+        ]
+
+        col1, col2, col3 = st.columns(3)
+
+        if not nifty.empty:
+            period_return = (
+                nifty["close"].iloc[-1] /
+                nifty["close"].iloc[0] - 1
+            ) * 100
+
+            col1.metric(
+                "Nifty 50 period return",
+                f"{period_return:.2f}%"
+            )
+
+        if not sector_summary_df.empty:
+
+            best_row = sector_summary_df.iloc[0]
+            worst_row = sector_summary_df.iloc[-1]
+
+            col2.metric(
+                "Best sector",
+                best_row["sector"],
+                f"{best_row['annualized_return_pct']:.1f}%"
+            )
+
+            col3.metric(
+                "Worst sector",
+                worst_row["sector"],
+                f"{worst_row['annualized_return_pct']:.1f}%"
+            )
+
+        st.subheader("Nifty 50 Closing Price")
+
+        fig = px.line(
+            nifty,
+            x="trade_date",
+            y="close"
+        )
+
         st.plotly_chart(fig, use_container_width=True)
 
 # ---------------------------------------------------------------------------
@@ -238,50 +262,148 @@ elif page == "Sector Deep Dive":
 # ---------------------------------------------------------------------------
 
 elif page == "Sector Rotation & Correlation":
+
     st.title("Sector Rotation & Correlation")
 
-    st.subheader("Correlation with Nifty 50")
-    nifty = sector_index_filtered[sector_index_filtered["index_name"] == "NIFTY 50"][
-        ["trade_date", "daily_return_pct"]
-    ].rename(columns={"daily_return_pct": "nifty_return"})
+    if sector_index_filtered.empty:
 
-    sectors_only = sector_index_filtered[sector_index_filtered["index_name"] != "NIFTY 50"]
-    corr_rows = []
-    for index_name, grp in sectors_only.groupby("index_name"):
-        merged = grp.merge(nifty, on="trade_date", how="inner")
-        if len(merged) > 1:
-            corr = merged["daily_return_pct"].corr(merged["nifty_return"])
-            corr_rows.append({"Sector Index": index_name, "Correlation with Nifty 50": round(corr, 3)})
-
-    corr_df = pd.DataFrame(corr_rows).sort_values(
-        "Correlation with Nifty 50", ascending=False
-    )
-    if not corr_df.empty:
-        fig = px.bar(
-            corr_df,
-            x="Correlation with Nifty 50",
-            y="Sector Index",
-            orientation="h",
-            color="Correlation with Nifty 50",
-            color_continuous_scale="RdYlGn",
+        st.warning(
+            "Sector index data is unavailable because NSE blocked the download."
         )
+
+        st.subheader("Sector Volatility")
+
+        volatility = (
+            stock_df.groupby("sector")["daily_return_pct"]
+            .std()
+            .mul(252 ** 0.5)
+            .reset_index(name="Annualized Volatility %")
+        )
+
+        fig = px.bar(
+            volatility,
+            x="sector",
+            y="Annualized Volatility %",
+            color="Annualized Volatility %",
+        )
+
         st.plotly_chart(fig, use_container_width=True)
 
-    st.subheader("Monthly Sector Leadership")
-    st.caption("Which sector delivered the highest return in each month.")
-    if not sectors_only.empty:
-        df = sectors_only.copy()
-        df["month"] = df["trade_date"].dt.to_period("M").astype(str)
-        monthly_returns = df.groupby(["index_name", "month"])["daily_return_pct"].sum().reset_index()
-        idx = monthly_returns.groupby("month")["daily_return_pct"].idxmax()
-        leaders = monthly_returns.loc[idx].sort_values("month")
-        leaders = leaders.rename(
-            columns={"index_name": "Leading Sector", "daily_return_pct": "Return %", "month": "Month"}
-        )
-        leaders["Return %"] = leaders["Return %"].round(2)
-        st.dataframe(leaders, use_container_width=True, hide_index=True)
+        st.subheader("Average Daily Returns")
 
-        fig = px.bar(leaders, x="Month", y="Return %", color="Leading Sector")
+        avg_return = (
+            stock_df.groupby("sector")["daily_return_pct"]
+            .mean()
+            .reset_index(name="Average Daily Return %")
+        )
+
+        fig = px.bar(
+            avg_return,
+            x="sector",
+            y="Average Daily Return %",
+            color="Average Daily Return %",
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+
+    else:
+
+        st.subheader("Correlation with Nifty 50")
+
+        nifty = sector_index_filtered[
+            sector_index_filtered["index_name"] == "NIFTY 50"
+        ][["trade_date", "daily_return_pct"]].rename(
+            columns={"daily_return_pct": "nifty_return"}
+        )
+
+        sectors_only = sector_index_filtered[
+            sector_index_filtered["index_name"] != "NIFTY 50"
+        ]
+
+        corr_rows = []
+
+        for index_name, grp in sectors_only.groupby("index_name"):
+
+            merged = grp.merge(
+                nifty,
+                on="trade_date",
+                how="inner"
+            )
+
+            if len(merged) > 1:
+
+                corr = merged["daily_return_pct"].corr(
+                    merged["nifty_return"]
+                )
+
+                corr_rows.append(
+                    {
+                        "Sector Index": index_name,
+                        "Correlation with Nifty 50": round(corr, 3),
+                    }
+                )
+
+        corr_df = pd.DataFrame(corr_rows)
+
+        if not corr_df.empty:
+
+            fig = px.bar(
+                corr_df,
+                x="Correlation with Nifty 50",
+                y="Sector Index",
+                orientation="h",
+                color="Correlation with Nifty 50",
+            )
+
+            st.plotly_chart(fig, use_container_width=True)
+
+        st.subheader("Monthly Sector Leadership")
+
+        df = sectors_only.copy()
+
+        df["month"] = (
+            df["trade_date"]
+            .dt.to_period("M")
+            .astype(str)
+        )
+
+        monthly_returns = (
+            df.groupby(["index_name", "month"])
+            ["daily_return_pct"]
+            .sum()
+            .reset_index()
+        )
+
+        idx = monthly_returns.groupby("month")[
+            "daily_return_pct"
+        ].idxmax()
+
+        leaders = (
+            monthly_returns.loc[idx]
+            .sort_values("month")
+        )
+
+        leaders = leaders.rename(
+            columns={
+                "index_name": "Leading Sector",
+                "daily_return_pct": "Return %",
+                "month": "Month",
+            }
+        )
+
+        st.dataframe(
+            leaders,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        fig = px.bar(
+            leaders,
+            x="Month",
+            y="Return %",
+            color="Leading Sector",
+        )
+
         st.plotly_chart(fig, use_container_width=True)
 
 st.sidebar.markdown("---")
