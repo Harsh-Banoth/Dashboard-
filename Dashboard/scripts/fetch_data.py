@@ -24,7 +24,8 @@ from datetime import date
 from pathlib import Path
 
 import pandas as pd
-from jugaad_data.nse import stock_df, index_df
+from jugaad_data.nse import stock_df
+from nselib import capital_market
 
 # ---------------------------------------------------------------------------
 # CONFIG -- edit this section to change the stock/sector universe or dates
@@ -92,35 +93,31 @@ def fetch_stock(symbol: str) -> None:
     time.sleep(1)  # be polite to NSE's servers
 
 
-def fetch_index(index_name: str, max_retries: int = 3) -> None:
-    """
-    Fetches sector index data. NSE's index endpoint is noticeably flakier
-    than the stock endpoint -- it occasionally returns a non-JSON response
-    (e.g. an error page or empty body), which jugaad-data surfaces as a
-    KeyError on 'd'. Retrying with a short backoff resolves this most of
-    the time; if it still fails after retries, that's logged clearly so it
-    can be re-run later rather than silently producing an empty dataset.
-    """
+def fetch_index(index_name: str) -> None:
     safe_name = index_name.replace(" ", "_")
     out_path = RAW_DIR / f"index_{safe_name}.csv"
+
     if out_path.exists():
-        print(f"[skip] {index_name} already downloaded")
+        print(f"[skip] {index_name}")
         return
 
-    for attempt in range(1, max_retries + 1):
-        try:
-            df = index_df(symbol=index_name, from_date=START_DATE, to_date=END_DATE)
-            df.to_csv(out_path, index=False)
-            print(f"[ok]   {index_name}: {len(df)} rows -> {out_path.name}")
+    try:
+        df = capital_market.index_data(
+            index=index_name,
+            from_date=START_DATE.strftime("%d-%m-%Y"),
+            to_date=END_DATE.strftime("%d-%m-%Y"),
+        )
+
+        if df.empty:
+            print(f"[fail] {index_name}: no data returned")
             return
-        except Exception as e:
-            if attempt < max_retries:
-                wait = attempt * 3
-                print(f"[retry {attempt}/{max_retries}] {index_name}: {e} -- waiting {wait}s")
-                time.sleep(wait)
-            else:
-                print(f"[fail] {index_name}: {e} (gave up after {max_retries} attempts)")
-    time.sleep(1)
+
+        df.to_csv(out_path, index=False)
+
+        print(f"[ok] {index_name}: {len(df)} rows")
+
+    except Exception as e:
+        print(f"[fail] {index_name}: {e}")
 
 
 def write_stock_master() -> None:
