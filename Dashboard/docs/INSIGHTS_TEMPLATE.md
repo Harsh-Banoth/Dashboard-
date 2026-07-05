@@ -34,8 +34,3 @@
   figures slightly understate actual investor returns.
 - Daily close-based returns; intraday volatility is not captured.
 
-## How to use this in interviews
-Be ready to explain: why you chose this analysis, what surprised you in the
-data, and one decision you'd make differently if continuing the project
-(e.g. "I'd add dividend-adjusted returns next" or "I'd extend to the full
-Nifty 50 with automated fundamentals scraping").
